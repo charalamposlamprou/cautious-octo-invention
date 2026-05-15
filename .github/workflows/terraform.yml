@@ -1,0 +1,229 @@
+name: Terraform
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  TF_VERSION: "1.7.0"
+  AWS_REGION: "eu-west-1"
+  TF_IN_AUTOMATION: "true"
+
+# Prevent parallel applies against the same backend.
+# Scope by environment in the apply jobs (concurrency can't read matrix
+# values, so apply jobs are split per-env below).
+concurrency:
+  group: tf-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── Format + scan: cheap, fail fast ───────────────────────────────────────
+  lint:
+    name: Lint & Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          soft_fail: false
+
+  # ── Plan: runs for all environments on every PR and push ──────────────────
+  plan:
+    name: Plan - ${{ matrix.environment }}
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - environment: dev
+            role_var: AWS_ROLE_DEV
+          - environment: test
+            role_var: AWS_ROLE_TEST
+          - environment: staging
+            role_var: AWS_ROLE_STAGING
+          - environment: prod
+            role_var: AWS_ROLE_PROD
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars[matrix.role_var] }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -lock-timeout=5m -backend-config=backend/${{ matrix.environment }}.hcl
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          set -o pipefail
+          terraform plan \
+            -lock-timeout=5m \
+            -var-file=envs/${{ matrix.environment }}.tfvars \
+            -out=tfplan \
+            -no-color | tee plan.txt
+
+      - name: Upload Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ matrix.environment }}
+          path: |
+            tfplan
+            plan.txt
+          retention-days: 1
+
+      - name: Comment Plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const env = '${{ matrix.environment }}';
+            let plan = fs.readFileSync('plan.txt', 'utf8');
+            const max = 60000;
+            if (plan.length > max) {
+              plan = plan.slice(0, max) + '\n... (truncated, see job logs)';
+            }
+            const marker = `<!-- tfplan-${env} -->`;
+            const body = `${marker}\n### Terraform Plan — \`${env}\`\n<details><summary>Show plan</summary>\n\n\`\`\`hcl\n${plan}\n\`\`\`\n</details>`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number, body,
+              });
+            }
+
+  # ── Apply: sequential dev → test → staging → prod ─────────────────────────
+  # Each job inherits the GitHub environment's branch restrictions and
+  # required reviewers (configure these in repo settings, not the workflow).
+  apply-dev:
+    name: Apply - dev
+    needs: plan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    environment: dev
+    concurrency:
+      group: tf-apply-dev
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-apply
+        with:
+          environment: dev
+          role-to-assume: ${{ vars.AWS_ROLE_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
+
+  apply-test:
+    name: Apply - test
+    needs: apply-dev
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    environment: test
+    concurrency:
+      group: tf-apply-test
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-apply
+        with:
+          environment: test
+          role-to-assume: ${{ vars.AWS_ROLE_TEST }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
+
+  apply-staging:
+    name: Apply - staging
+    needs: plan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: tf-apply-staging
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-apply
+        with:
+          environment: staging
+          role-to-assume: ${{ vars.AWS_ROLE_STAGING }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
+
+  apply-prod:
+    name: Apply - prod
+    needs: apply-staging
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: tf-apply-prod
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-apply
+        with:
+          environment: prod
+          role-to-assume: ${{ vars.AWS_ROLE_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
