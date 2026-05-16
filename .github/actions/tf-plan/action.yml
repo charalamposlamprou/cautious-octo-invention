@@ -20,6 +20,10 @@ inputs:
     description: Path to Terraform root
     required: false
     default: "."
+  mode:
+    description: 'plan or destroy. When "destroy", terraform plan -destroy is run.'
+    required: false
+    default: "plan"
 
 runs:
   using: composite
@@ -47,9 +51,15 @@ runs:
     - name: Terraform Plan
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        TF_MODE: ${{ inputs.mode }}
       run: |
         set -o pipefail
-        terraform plan \
+        destroy_flag=""
+        if [ "$TF_MODE" = "destroy" ]; then
+          destroy_flag="-destroy"
+        fi
+        terraform plan $destroy_flag \
           -lock-timeout=5m \
           -var-file=envs/${{ inputs.environment }}.tfvars \
           -out=tfplan \
