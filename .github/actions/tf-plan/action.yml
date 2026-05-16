@@ -1,5 +1,5 @@
 name: Terraform Plan
-description: Configure AWS via OIDC, init backend, plan, upload artifact, comment on PR.
+description: Configure AWS via OIDC, init backend, run plan (with tfcmt on PRs), upload artifact.
 
 inputs:
   environment:
@@ -24,6 +24,10 @@ inputs:
     description: 'plan or destroy. When "destroy", terraform plan -destroy is run.'
     required: false
     default: "plan"
+  tfcmt-version:
+    description: tfcmt version to install.
+    required: false
+    default: "v4.14.0"
 
 runs:
   using: composite
@@ -37,6 +41,18 @@ runs:
     - uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: ${{ inputs.terraform-version }}
+
+    - name: Install tfcmt
+      shell: bash
+      run: |
+        if ! command -v tfcmt >/dev/null 2>&1; then
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/suzuki-shunsuke/tfcmt/releases/download/${{ inputs.tfcmt-version }}/tfcmt_linux_amd64.tar.gz" \
+            | tar -xz -C "$HOME/.local/bin" tfcmt
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+        fi
+        tfcmt --version
 
     - name: Terraform Init
       shell: bash
@@ -53,17 +69,27 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       env:
         TF_MODE: ${{ inputs.mode }}
+        GITHUB_TOKEN: ${{ github.token }}
       run: |
         set -o pipefail
         destroy_flag=""
         if [ "$TF_MODE" = "destroy" ]; then
           destroy_flag="-destroy"
         fi
-        terraform plan $destroy_flag \
-          -lock-timeout=5m \
-          -var-file=envs/${{ inputs.environment }}.tfvars \
-          -out=tfplan \
-          -no-color | tee plan.txt
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          tfcmt -var "target:${{ inputs.environment }}" plan -- \
+            terraform plan $destroy_flag \
+              -lock-timeout=5m \
+              -var-file=envs/${{ inputs.environment }}.tfvars \
+              -out=tfplan \
+              -no-color
+        else
+          terraform plan $destroy_flag \
+            -lock-timeout=5m \
+            -var-file=envs/${{ inputs.environment }}.tfvars \
+            -out=tfplan \
+            -no-color | tee plan.txt
+        fi
 
     - name: Upload Plan
       uses: actions/upload-artifact@v4
@@ -73,36 +99,4 @@ runs:
           ${{ inputs.working-directory }}/tfplan
           ${{ inputs.working-directory }}/plan.txt
         retention-days: 1
-
-    - name: Comment Plan on PR
-      if: github.event_name == 'pull_request'
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const fs = require('fs');
-          const env = '${{ inputs.environment }}';
-          const wd = '${{ inputs.working-directory }}';
-          let plan = fs.readFileSync(`${wd}/plan.txt`, 'utf8');
-          const max = 60000;
-          if (plan.length > max) {
-            plan = plan.slice(0, max) + '\n... (truncated, see job logs)';
-          }
-          const marker = `<!-- tfplan-${env} -->`;
-          const body = `${marker}\n### Terraform Plan — \`${env}\`\n<details><summary>Show plan</summary>\n\n\`\`\`hcl\n${plan}\n\`\`\`\n</details>`;
-          const { data: comments } = await github.rest.issues.listComments({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            issue_number: context.issue.number,
-          });
-          const existing = comments.find(c => c.body && c.body.startsWith(marker));
-          if (existing) {
-            await github.rest.issues.updateComment({
-              owner: context.repo.owner, repo: context.repo.repo,
-              comment_id: existing.id, body,
-            });
-          } else {
-            await github.rest.issues.createComment({
-              owner: context.repo.owner, repo: context.repo.repo,
-              issue_number: context.issue.number, body,
-            });
-          }
+        if-no-files-found: ignore
