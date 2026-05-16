@@ -1,0 +1,208 @@
+name: Terraform (destroy)
+
+# Manually-triggered destroy workflow.
+#
+# Plans destroy for all four envs in parallel. Each apply-destroy job is
+# gated by its env's reviewer rule — you choose which envs to actually
+# destroy by approving (or skipping) the pending deployment in the UI.
+#
+# Dispatch from the `main` branch so the staging/prod OIDC roles can be
+# assumed (their trust policies allow `ref:refs/heads/main`).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type "destroy" to confirm — anything else aborts.'
+        required: true
+        default: ""
+
+env:
+  TF_VERSION: "1.7.0"
+  AWS_REGION: "eu-west-1"
+  TF_IN_AUTOMATION: "true"
+
+concurrency:
+  group: tf-destroy
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: Confirm destroy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check confirmation input
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [ "$CONFIRMATION" != "destroy" ]; then
+            echo "::error::Confirmation must be exactly 'destroy'. Got: '$CONFIRMATION'"
+            exit 1
+          fi
+          echo "Confirmation OK — proceeding to plan-destroy for all envs."
+
+  # ── Plan-destroy (parallel for every env) ─────────────────────────────────
+  plan-destroy-dev:
+    name: Plan destroy - dev
+    needs: guard
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-plan
+        with:
+          environment: dev
+          role-to-assume: ${{ vars.AWS_ROLE_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
+          mode: destroy
+
+  plan-destroy-test:
+    name: Plan destroy - test
+    needs: guard
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-plan
+        with:
+          environment: test
+          role-to-assume: ${{ vars.AWS_ROLE_TEST }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
+          mode: destroy
+
+  plan-destroy-staging:
+    name: Plan destroy - staging
+    needs: guard
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-plan
+        with:
+          environment: staging
+          role-to-assume: ${{ vars.AWS_ROLE_STAGING }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
+          mode: destroy
+
+  plan-destroy-prod:
+    name: Plan destroy - prod
+    needs: guard
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-plan
+        with:
+          environment: prod
+          role-to-assume: ${{ vars.AWS_ROLE_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
+          mode: destroy
+
+  # ── Apply-destroy (each waits only on its own plan; gated by env reviewer) ─
+  apply-destroy-dev:
+    name: Apply destroy - dev
+    needs: plan-destroy-dev
+    runs-on: ubuntu-latest
+    environment: dev
+    concurrency:
+      group: tf-apply-dev
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-apply
+        with:
+          environment: dev
+          role-to-assume: ${{ vars.AWS_ROLE_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
+
+  apply-destroy-test:
+    name: Apply destroy - test
+    needs: plan-destroy-test
+    runs-on: ubuntu-latest
+    environment: test
+    concurrency:
+      group: tf-apply-test
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-apply
+        with:
+          environment: test
+          role-to-assume: ${{ vars.AWS_ROLE_TEST }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
+
+  apply-destroy-staging:
+    name: Apply destroy - staging
+    needs: plan-destroy-staging
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: tf-apply-staging
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-apply
+        with:
+          environment: staging
+          role-to-assume: ${{ vars.AWS_ROLE_STAGING }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
+
+  apply-destroy-prod:
+    name: Apply destroy - prod
+    needs: plan-destroy-prod
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: tf-apply-prod
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-apply
+        with:
+          environment: prod
+          role-to-assume: ${{ vars.AWS_ROLE_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
