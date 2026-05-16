@@ -1,5 +1,5 @@
 name: Terraform Apply
-description: Configure AWS via OIDC, init backend, download saved plan, and apply (with tfcmt on PRs).
+description: Configure AWS via OIDC, init backend, download saved plan, and apply.
 
 inputs:
   environment:
@@ -20,10 +20,6 @@ inputs:
     description: Path to Terraform root
     required: false
     default: "."
-  tfcmt-version:
-    description: tfcmt version to install.
-    required: false
-    default: "v4.14.0"
 
 runs:
   using: composite
@@ -37,18 +33,6 @@ runs:
     - uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: ${{ inputs.terraform-version }}
-
-    - name: Install tfcmt
-      shell: bash
-      run: |
-        if ! command -v tfcmt >/dev/null 2>&1; then
-          mkdir -p "$HOME/.local/bin"
-          curl -fsSL "https://github.com/suzuki-shunsuke/tfcmt/releases/download/${{ inputs.tfcmt-version }}/tfcmt_linux_amd64.tar.gz" \
-            | tar -xz -C "$HOME/.local/bin" tfcmt
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.local/bin:$PATH"
-        fi
-        tfcmt --version
 
     - name: Terraform Init
       shell: bash
@@ -64,12 +48,4 @@ runs:
     - name: Terraform Apply
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-      run: |
-        if [ "${{ github.event_name }}" = "pull_request" ]; then
-          tfcmt -var "target:${{ inputs.environment }}" apply -- \
-            terraform apply -lock-timeout=5m -auto-approve tfplan
-        else
-          terraform apply -lock-timeout=5m -auto-approve tfplan
-        fi
+      run: terraform apply -lock-timeout=5m -auto-approve tfplan
