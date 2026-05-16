@@ -2,7 +2,7 @@ name: Terraform
 
 on:
   push:
-    branches: [master]   # master push → staging/prod (post-merge)
+    branches: [main]   # main push → staging/prod (post-merge)
   pull_request:
     branches:
       - '**'              # any PR (opened/sync/reopened) → dev/test plan + apply
@@ -69,11 +69,11 @@ jobs:
           terraform-version: ${{ env.TF_VERSION }}
 
   # ── Plan: staging + prod ──────────────────────────────────────────────────
-  # Runs on master push only (after a PR merges to master).
+  # Runs on main push only (after a PR merges to main).
   plan-staging-prod:
     name: Plan - ${{ matrix.environment }}
     needs: lint
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -97,7 +97,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           terraform-version: ${{ env.TF_VERSION }}
 
-  # ── Apply: dev → test (any non-master push) ───────────────────────────────
+  # ── Apply: dev → test (any non-main push) ───────────────────────────────
   apply-dev:
     name: Apply - dev
     needs: plan-dev-test
@@ -144,11 +144,11 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           terraform-version: ${{ env.TF_VERSION }}
 
-  # ── Apply: staging → prod (master push only) ──────────────────────────────
+  # ── Apply: staging → prod (main push only) ──────────────────────────────
   apply-staging:
     name: Apply - staging
     needs: plan-staging-prod
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: staging
     concurrency:
@@ -171,7 +171,7 @@ jobs:
   apply-prod:
     name: Apply - prod
     needs: apply-staging
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
     concurrency:

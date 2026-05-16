@@ -94,7 +94,7 @@ module "github_infra_role_staging" {
 
   subject_filters = [
     "environment:staging",
-    "ref:refs/heads/master",
+    "ref:refs/heads/main",
   ]
 
   tags = local.common_tags
@@ -114,7 +114,7 @@ module "github_infra_role_prod" {
 
   subject_filters = [
     "environment:production",
-    "ref:refs/heads/master",
+    "ref:refs/heads/main",
   ]
 
   tags = local.common_tags
