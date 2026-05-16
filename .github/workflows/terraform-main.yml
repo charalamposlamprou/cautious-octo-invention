@@ -1,0 +1,116 @@
+name: Terraform (main)
+
+on:
+  push:
+    branches: [main]
+
+env:
+  TF_VERSION: "1.7.0"
+  AWS_REGION: "eu-west-1"
+  TF_IN_AUTOMATION: "true"
+
+concurrency:
+  group: tf-main-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  lint:
+    name: Lint & Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          soft_fail: false
+
+  # ── Plan / Apply per env (each apply gated only by its own plan) ─────────
+  plan-staging:
+    name: Plan - staging
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-plan
+        with:
+          environment: staging
+          role-to-assume: ${{ vars.AWS_ROLE_STAGING }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
+
+  apply-staging:
+    name: Apply - staging
+    needs: plan-staging
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: tf-apply-staging
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-apply
+        with:
+          environment: staging
+          role-to-assume: ${{ vars.AWS_ROLE_STAGING }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
+
+  plan-prod:
+    name: Plan - prod
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-plan
+        with:
+          environment: prod
+          role-to-assume: ${{ vars.AWS_ROLE_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
+
+  apply-prod:
+    name: Apply - prod
+    needs: [plan-prod, apply-staging]
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: tf-apply-prod
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-apply
+        with:
+          environment: prod
+          role-to-assume: ${{ vars.AWS_ROLE_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
