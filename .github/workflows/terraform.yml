@@ -2,11 +2,10 @@ name: Terraform
 
 on:
   push:
-    branches:
-      - '**'           # any branch — non-master runs dev/test, master runs staging/prod
+    branches: [master]   # master push → staging/prod (post-merge)
   pull_request:
     branches:
-      - '**'           # PRs targeting any branch run dev/test plan (no apply)
+      - '**'              # any PR (opened/sync/reopened) → dev/test plan + apply
 
 env:
   TF_VERSION: "1.7.0"
@@ -40,14 +39,11 @@ jobs:
           soft_fail: false
 
   # ── Plan: dev + test ──────────────────────────────────────────────────────
-  # Runs on any non-master push (feature branches deploy here) AND on any PR
-  # (plan-only, posted as a comment for reviewers).
+  # Runs only on PR events (opened/synchronize/reopened). No PR → no pipeline.
   plan-dev-test:
     name: Plan - ${{ matrix.environment }}
     needs: lint
-    if: |
-      (github.event_name == 'push' && github.ref != 'refs/heads/master') ||
-      github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -105,7 +101,7 @@ jobs:
   apply-dev:
     name: Apply - dev
     needs: plan-dev-test
-    if: github.event_name == 'push' && github.ref != 'refs/heads/master'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     environment: dev
     concurrency:
@@ -128,7 +124,7 @@ jobs:
   apply-test:
     name: Apply - test
     needs: apply-dev
-    if: github.event_name == 'push' && github.ref != 'refs/heads/master'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     environment: test
     concurrency:
