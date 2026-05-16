@@ -5,4 +5,6 @@
 #
 # Add per-env resources (VPC, ECS, ECR, ALB, etc.) here or compose them
 # from ./modules.
+#
+# (dummy-pr-2: verifying the split workflow only shows the PR path graph.)
 ###############################################################################
