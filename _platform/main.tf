@@ -15,8 +15,15 @@
 #  - Four `*-github-infra` roles (dev/test/staging/prod) used by the main
 #    terraform.yml plan/apply jobs.
 #
+# State:
+#   Uses the LOCAL backend — this stack is bootstrapped once from a laptop
+#   and the resulting state file (_platform/terraform.tfstate) is gitignored.
+#   If you need to rotate trust policies later, run `terraform apply` from
+#   the same machine, or store the state file in 1Password / a private
+#   bucket between runs.
+#
 # Apply order:
-#  1. Run this stack once per AWS account (manually or via a one-off job).
+#  1. From your laptop: `cd _platform && terraform init && terraform apply`.
 #  2. Copy the role ARN outputs into the repo's GitHub Actions variables
 #     (AWS_ROLE_DEV, AWS_ROLE_TEST, AWS_ROLE_STAGING, AWS_ROLE_PROD).
 #  3. The root composition (../*.tf) then uses those roles to plan/apply
@@ -45,7 +52,7 @@ module "github_infra_role_dev" {
 
   subject_filters = [
     "environment:dev",
-    "ref:refs/heads/develop",
+    "ref:refs/heads/*",
     "pull_request",
   ]
 
@@ -66,7 +73,7 @@ module "github_infra_role_test" {
 
   subject_filters = [
     "environment:test",
-    "ref:refs/heads/develop",
+    "ref:refs/heads/*",
     "pull_request",
   ]
 
@@ -87,8 +94,7 @@ module "github_infra_role_staging" {
 
   subject_filters = [
     "environment:staging",
-    "ref:refs/heads/main",
-    "pull_request",
+    "ref:refs/heads/master",
   ]
 
   tags = local.common_tags
@@ -108,7 +114,7 @@ module "github_infra_role_prod" {
 
   subject_filters = [
     "environment:production",
-    "ref:refs/heads/main",
+    "ref:refs/heads/master",
   ]
 
   tags = local.common_tags
