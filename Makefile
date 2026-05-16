@@ -61,17 +61,25 @@ gh-envs: ## Create dev/test/staging/production environments + branch policies
 	    fi; \
 	  done
 
-gh-reviewers: ## Set the current GitHub user as required reviewer on production
+gh-reviewers: ## Set the current GitHub user as required reviewer on every env
 	@set -euo pipefail; \
 	  REPO=$$(gh repo view --json nameWithOwner -q .nameWithOwner); \
 	  USER_ID=$$(gh api user -q .id); \
 	  LOGIN=$$(gh api user -q .login); \
-	  gh api --silent -X PUT "repos/$$REPO/environments/production" \
-	    -F "reviewers[][type]=User" \
-	    -F "reviewers[][id]=$$USER_ID" \
-	    -F "deployment_branch_policy[protected_branches]=false" \
-	    -F "deployment_branch_policy[custom_branch_policies]=true"; \
-	  echo "  ✓ production → required reviewer: $$LOGIN"
+	  for ENV in dev test; do \
+	    gh api --silent -X PUT "repos/$$REPO/environments/$$ENV" \
+	      -F "reviewers[][type]=User" \
+	      -F "reviewers[][id]=$$USER_ID"; \
+	    echo "  ✓ $$ENV → required reviewer: $$LOGIN"; \
+	  done; \
+	  for ENV in staging production; do \
+	    gh api --silent -X PUT "repos/$$REPO/environments/$$ENV" \
+	      -F "reviewers[][type]=User" \
+	      -F "reviewers[][id]=$$USER_ID" \
+	      -F "deployment_branch_policy[protected_branches]=false" \
+	      -F "deployment_branch_policy[custom_branch_policies]=true"; \
+	    echo "  ✓ $$ENV → required reviewer: $$LOGIN (master-only branch policy preserved)"; \
+	  done
 
 # ── One-shot ────────────────────────────────────────────────────────────────
 bootstrap: check platform-apply gh-vars gh-envs gh-reviewers ## Full bootstrap: apply + GH vars + environments + reviewers
