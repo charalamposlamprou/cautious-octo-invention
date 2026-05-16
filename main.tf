@@ -5,4 +5,6 @@
 #
 # Add per-env resources (VPC, ECS, ECR, ALB, etc.) here or compose them
 # from ./modules.
+#
+# (dummy-pr test: this comment exists to verify the PR-only pipeline triggers.)
 ###############################################################################
