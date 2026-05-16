@@ -7,4 +7,5 @@
 # from ./modules.
 #
 # (dummy-pr-2: verifying the split workflow only shows the PR path graph.)
+# (extra line to test that a follow-up push triggers one new PR-event run.)
 ###############################################################################
