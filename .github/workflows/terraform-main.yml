@@ -34,18 +34,11 @@ jobs:
         with:
           soft_fail: false
 
-  plan:
-    name: Plan - ${{ matrix.environment }}
+  # ── Plan / Apply per env (each apply gated only by its own plan) ─────────
+  plan-staging:
+    name: Plan - staging
     needs: lint
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - environment: staging
-            role_var: AWS_ROLE_STAGING
-          - environment: prod
-            role_var: AWS_ROLE_PROD
     permissions:
       id-token: write
       contents: read
@@ -55,14 +48,14 @@ jobs:
           ref: ${{ github.sha }}
       - uses: ./.github/actions/tf-plan
         with:
-          environment: ${{ matrix.environment }}
-          role-to-assume: ${{ vars[matrix.role_var] }}
+          environment: staging
+          role-to-assume: ${{ vars.AWS_ROLE_STAGING }}
           aws-region: ${{ env.AWS_REGION }}
           terraform-version: ${{ env.TF_VERSION }}
 
   apply-staging:
     name: Apply - staging
-    needs: plan
+    needs: plan-staging
     runs-on: ubuntu-latest
     environment: staging
     concurrency:
@@ -82,9 +75,27 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           terraform-version: ${{ env.TF_VERSION }}
 
+  plan-prod:
+    name: Plan - prod
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-plan
+        with:
+          environment: prod
+          role-to-assume: ${{ vars.AWS_ROLE_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
+
   apply-prod:
     name: Apply - prod
-    needs: apply-staging
+    needs: [plan-prod, apply-staging]
     runs-on: ubuntu-latest
     environment: production
     concurrency:

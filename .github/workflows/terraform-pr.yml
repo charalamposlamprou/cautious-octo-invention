@@ -35,18 +35,11 @@ jobs:
         with:
           soft_fail: false
 
-  plan:
-    name: Plan - ${{ matrix.environment }}
+  # ── Plan / Apply per env (each apply gated only by its own plan) ─────────
+  plan-dev:
+    name: Plan - dev
     needs: lint
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - environment: dev
-            role_var: AWS_ROLE_DEV
-          - environment: test
-            role_var: AWS_ROLE_TEST
     permissions:
       id-token: write
       contents: read
@@ -57,14 +50,14 @@ jobs:
           ref: ${{ github.sha }}
       - uses: ./.github/actions/tf-plan
         with:
-          environment: ${{ matrix.environment }}
-          role-to-assume: ${{ vars[matrix.role_var] }}
+          environment: dev
+          role-to-assume: ${{ vars.AWS_ROLE_DEV }}
           aws-region: ${{ env.AWS_REGION }}
           terraform-version: ${{ env.TF_VERSION }}
 
   apply-dev:
     name: Apply - dev
-    needs: plan
+    needs: plan-dev
     runs-on: ubuntu-latest
     environment: dev
     concurrency:
@@ -84,9 +77,28 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           terraform-version: ${{ env.TF_VERSION }}
 
+  plan-test:
+    name: Plan - test
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/tf-plan
+        with:
+          environment: test
+          role-to-assume: ${{ vars.AWS_ROLE_TEST }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TF_VERSION }}
+
   apply-test:
     name: Apply - test
-    needs: apply-dev
+    needs: plan-test
     runs-on: ubuntu-latest
     environment: test
     concurrency:
