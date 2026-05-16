@@ -5,4 +5,6 @@
 #
 # Add per-env resources (VPC, ECS, ECR, ALB, etc.) here or compose them
 # from ./modules.
+#
+# (dummy-tfcmt: verify tfcmt plan + apply comments end-to-end on a fresh PR.)
 ###############################################################################
