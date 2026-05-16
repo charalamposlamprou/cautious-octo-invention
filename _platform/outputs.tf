@@ -22,3 +22,8 @@ output "prod_infra_role_arn" {
   description = "Set this as AWS_ROLE_PROD in repo Actions variables."
   value       = module.github_infra_role_prod.role_arn
 }
+
+output "state_bucket_names" {
+  description = "Per-env S3 buckets that hold Terraform state. Reference these in backend/<env>.hcl."
+  value       = { for k, v in aws_s3_bucket.state : k => v.bucket }
+}
