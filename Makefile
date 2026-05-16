@@ -5,7 +5,7 @@ SHELL       := /usr/bin/env bash
 
 PLATFORM_DIR := _platform
 
-.PHONY: help check fmt platform-init platform-plan platform-apply platform-destroy gh-vars gh-envs bootstrap
+.PHONY: help check fmt platform-init platform-plan platform-apply platform-destroy gh-vars gh-envs gh-reviewers bootstrap
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*##"; printf "Targets:\n"} /^[a-zA-Z_-]+:.*##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -63,8 +63,18 @@ gh-envs: ## Create dev/test/staging/production environments + branch policies
 	  fi
 	done
 
+gh-reviewers: ## Set the current GitHub user as required reviewer on production
+	REPO=$$(gh repo view --json nameWithOwner -q .nameWithOwner)
+	USER_ID=$$(gh api user -q .id)
+	gh api --silent -X PUT "repos/$$REPO/environments/production" \
+	  -F "reviewers[][type]=User" \
+	  -F "reviewers[][id]=$$USER_ID" \
+	  -F "deployment_branch_policy[protected_branches]=false" \
+	  -F "deployment_branch_policy[custom_branch_policies]=true"
+	@echo "  ✓ production → required reviewer: $$(gh api user -q .login)"
+
 # ── One-shot ────────────────────────────────────────────────────────────────
-bootstrap: check platform-apply gh-vars gh-envs ## Full bootstrap: apply + GH vars + environments
+bootstrap: check platform-apply gh-vars gh-envs gh-reviewers ## Full bootstrap: apply + GH vars + environments + reviewers
 	@echo ""
 	@echo "✓ Bootstrap complete."
 	@echo "Reminder: stash $(PLATFORM_DIR)/terraform.tfstate somewhere safe (1Password, private bucket)."
