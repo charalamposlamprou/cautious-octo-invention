@@ -52,12 +52,17 @@ gh-envs: ## Create dev/test/staging/production environments + branch policies
 	    gh api --silent -X PUT "repos/$$REPO/environments/$$ENV" \
 	      -F "deployment_branch_policy[protected_branches]=false" \
 	      -F "deployment_branch_policy[custom_branch_policies]=true"; \
-	    existing=$$(gh api "repos/$$REPO/environments/$$ENV/deployment-branch-policies" --jq '.branch_policies[] | select(.name == "master") | .id' 2>/dev/null || true); \
+	    stale=$$(gh api "repos/$$REPO/environments/$$ENV/deployment-branch-policies" --jq '.branch_policies[] | select(.name == "master") | .id' 2>/dev/null || true); \
+	    if [ -n "$$stale" ]; then \
+	      gh api --silent -X DELETE "repos/$$REPO/environments/$$ENV/deployment-branch-policies/$$stale"; \
+	      echo "  ✓ $$ENV → removed stale branch policy: master"; \
+	    fi; \
+	    existing=$$(gh api "repos/$$REPO/environments/$$ENV/deployment-branch-policies" --jq '.branch_policies[] | select(.name == "main") | .id' 2>/dev/null || true); \
 	    if [ -z "$$existing" ]; then \
-	      gh api --silent -X POST "repos/$$REPO/environments/$$ENV/deployment-branch-policies" -f "name=master"; \
-	      echo "  ✓ $$ENV → branch policy added: master"; \
+	      gh api --silent -X POST "repos/$$REPO/environments/$$ENV/deployment-branch-policies" -f "name=main"; \
+	      echo "  ✓ $$ENV → branch policy added: main"; \
 	    else \
-	      echo "  ✓ $$ENV → branch policy already set: master"; \
+	      echo "  ✓ $$ENV → branch policy already set: main"; \
 	    fi; \
 	  done
 
@@ -78,7 +83,7 @@ gh-reviewers: ## Set the current GitHub user as required reviewer on every env
 	      -F "reviewers[][id]=$$USER_ID" \
 	      -F "deployment_branch_policy[protected_branches]=false" \
 	      -F "deployment_branch_policy[custom_branch_policies]=true"; \
-	    echo "  ✓ $$ENV → required reviewer: $$LOGIN (master-only branch policy preserved)"; \
+	    echo "  ✓ $$ENV → required reviewer: $$LOGIN (main-only branch policy preserved)"; \
 	  done
 
 # ── One-shot ────────────────────────────────────────────────────────────────
