@@ -21,7 +21,7 @@ resource "aws_iam_openid_connect_provider" "github" {
 
   url             = "https://${local.oidc_url}"
   client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = data.tls_certificate.github_oidc[0].certificates[*].sha1_fingerprint
+  thumbprint_list = [data.tls_certificate.github_oidc[0].certificates[length(data.tls_certificate.github_oidc[0].certificates) - 1].sha1_fingerprint]
 
   tags = var.tags
 }

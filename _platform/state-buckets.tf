@@ -18,7 +18,11 @@ locals {
 resource "aws_s3_bucket" "state" {
   for_each = toset(local.state_envs)
 
-  bucket        = "${var.service_name}-tfstate-${each.key}-${data.aws_caller_identity.current.account_id}"
+  bucket = "${var.service_name}-tfstate-${each.key}-${data.aws_caller_identity.current.account_id}"
+
+  # WARNING: force_destroy=true allows terraform destroy to empty and delete these
+  # buckets including all versioned state objects. Set to false in long-lived
+  # environments where accidental state loss is unacceptable.
   force_destroy = true
 
   tags = merge(local.common_tags, {
