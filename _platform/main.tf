@@ -37,7 +37,7 @@ data "tls_certificate" "github_oidc" {
 resource "aws_iam_openid_connect_provider" "github" {
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = data.tls_certificate.github_oidc.certificates[*].sha1_fingerprint
+  thumbprint_list = [data.tls_certificate.github_oidc.certificates[length(data.tls_certificate.github_oidc.certificates) - 1].sha1_fingerprint]
   tags            = local.common_tags
 }
 
