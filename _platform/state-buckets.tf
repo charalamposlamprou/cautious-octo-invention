@@ -19,7 +19,7 @@ resource "aws_s3_bucket" "state" {
   for_each = toset(local.state_envs)
 
   bucket        = "${var.service_name}-tfstate-${each.key}-${data.aws_caller_identity.current.account_id}"
-  force_destroy = false
+  force_destroy = true
 
   tags = merge(local.common_tags, {
     Environment = each.key
